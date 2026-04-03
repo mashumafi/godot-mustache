@@ -31,25 +31,18 @@
 #include "string_builder.h"
 
 StringBuilder &StringBuilder::append(const godot::String &p_string) {
-	if (p_string.is_empty()) {
+	strings.push_back(p_string);
+	return append({ p_string.ptr(), static_cast<size_t>(p_string.length()) });
+}
+
+StringBuilder &StringBuilder::append(std::u32string_view p_string) {
+	if (p_string.empty()) {
 		return *this;
 	}
 
-	strings.push_back(p_string);
-	appended_strings.push_back(-1);
+	views.push_back(p_string);
 
-	string_length += p_string.length();
-
-	return *this;
-}
-
-StringBuilder &StringBuilder::append(const char *p_cstring) {
-	int32_t len = strlen(p_cstring);
-
-	c_strings.push_back(p_cstring);
-	appended_strings.push_back(len);
-
-	string_length += len;
+	string_length += p_string.size();
 
 	return *this;
 }
@@ -65,32 +58,14 @@ godot::String StringBuilder::as_string() const {
 
 	int current_position = 0;
 
-	int godot_string_elem = 0;
-	int c_string_elem = 0;
+	for (std::u32string_view s : views) {
+		const int32_t str_len = s.size();
 
-	for (uint32_t i = 0; i < appended_strings.size(); i++) {
-		const int32_t str_len = appended_strings[i];
-
-		if (str_len == -1) {
-			// Godot string
-			const godot::String &s = strings[godot_string_elem];
-
-			memcpy(buffer + current_position, s.ptr(), s.length() * sizeof(char32_t));
-
-			current_position += s.length();
-
-			godot_string_elem++;
-		} else {
-			const char *s = c_strings[c_string_elem];
-
-			for (int32_t j = 0; j < str_len; j++) {
-				buffer[current_position + j] = s[j];
-			}
-
-			current_position += str_len;
-
-			c_string_elem++;
+		for (int32_t j = 0; j < str_len; j++) {
+			buffer[current_position + j] = s[j];
 		}
+
+		current_position += str_len;
 	}
 	buffer[current_position] = 0;
 

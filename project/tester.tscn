@@ -1,0 +1,81 @@
+[gd_scene load_steps=4 format=3 uid="uid://c7n0px0ws3a8i"]
+
+[ext_resource type="Script" uid="uid://8pcdii75lhgv" path="res://tester.gd" id="1_qxhol"]
+[ext_resource type="PackedScene" uid="uid://btjced6croplo" path="res://test_group.tscn" id="2_7g65i"]
+[ext_resource type="Script" uid="uid://b2js1xtkimogk" path="res://mustache_spec_test.gd" id="3_noswq"]
+
+[node name="Tester" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_qxhol")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="unit_tests" parent="MarginContainer/VBoxContainer/ScrollContainer" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="mustache_spec" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests" index="0" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+
+[node name="comments" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="0" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="delimiters" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="1" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="interpolation" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="2" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="inverted" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="3" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="partials" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="4" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="sections" parent="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec/Tests" index="5" instance=ExtResource("2_7g65i")]
+layout_mode = 2
+script = ExtResource("3_noswq")
+
+[node name="RunAllButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Run All"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SuccessLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Success: "
+
+[node name="ProgressBar" type="ProgressBar" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FailLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Failed: "
+
+[node name="ProgressBar2" type="ProgressBar" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[editable path="MarginContainer/VBoxContainer/ScrollContainer/unit_tests"]
+[editable path="MarginContainer/VBoxContainer/ScrollContainer/unit_tests/Tests/mustache_spec"]
