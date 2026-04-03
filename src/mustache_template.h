@@ -38,16 +38,16 @@ public:
 
 	inline MustacheElement() : m_type(Type::Invalid) {}
 
-	inline MustacheElement(Type type, std::u32string_view text) : m_type(type), m_text{ .m_content = text } {
+	inline MustacheElement(Type type, std::u32string_view text) : m_type(type), m_text{ text } {
 	}
 	inline MustacheElement(std::u32string_view text) : MustacheElement(Type::Text, text) {
 	}
-	inline MustacheElement(Type type, size_t segmentIndex, const TokenData &data) : m_type(type), m_variable{ .m_segmentIndex = segmentIndex, .m_data = data } {
+	inline MustacheElement(Type type, size_t segmentIndex, const TokenData &data) : m_type(type), m_variable{ segmentIndex, data } {
 	}
-	inline MustacheElement(Type type, size_t segmentIndex, size_t jumpIndex, const TokenData &data) : m_type(type), m_section{ .m_segmentIndex = segmentIndex, .m_jumpIndex = jumpIndex, .m_data = data } {
+	inline MustacheElement(Type type, size_t segmentIndex, size_t jumpIndex, const TokenData &data) : m_type(type), m_section{ segmentIndex, std::u32string_view(), jumpIndex, data } {
 	}
 
-	inline MustacheElement(std::u32string_view name, std::u32string_view prefix, const TokenData &data) : m_type(Type::Partial), m_partial{ .m_name = name, .m_prefix = prefix, .m_data = data } {
+	inline MustacheElement(std::u32string_view name, std::u32string_view prefix, const TokenData &data) : m_type(Type::Partial), m_partial{ name, prefix, data } {
 	}
 
 	uint64_t m_line;
