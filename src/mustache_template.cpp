@@ -1,11 +1,13 @@
 #include "mustache_template.h"
+#include "mustache_template_provider.h"
 #include "string_builder.h"
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/pair.hpp>
+#include <godot_cpp/variant/array.hpp>
 
 #include <array>
-#include <span>
 
 namespace {
 
@@ -18,7 +20,7 @@ godot::String stringify(const godot::Variant &var) {
 
 using ReplacePair = godot::Pair<char32_t, std::u32string_view>;
 
-static const auto xml_tokens = std::array{
+static const std::array<ReplacePair, 5> xml_tokens = {
 	ReplacePair(U'&', U"&amp;"),
 	ReplacePair(U'<', U"&lt;"),
 	ReplacePair(U'>', U"&gt;"),
@@ -145,23 +147,75 @@ MustacheSize estimate_element_count(std::u32string_view buffer) {
 	return elements;
 }
 
-size_t add_key(MustacheTemplateData &data, std::u32string_view name, size_t key_pos, size_t key_len) {
-	std::u32string key_utf32(name);
-	godot::String key_string(key_utf32.c_str());
-	data.m_keys.push_back(godot::StringName(key_string));
-	data.m_segments.push_back(Segment(key_pos, key_len));
-	return data.m_keys.size() - 1;
+struct U32StringViewHash {
+	static _FORCE_INLINE_ uint32_t hash(std::u32string_view p_string) {
+		uint32_t h = 5381;
+		for (char32_t c : p_string) {
+			h = ((h << 5) + h) ^ static_cast<uint32_t>(c);
+		}
+		return h;
+	}
+};
+
+struct U32StringViewEqual {
+	static _FORCE_INLINE_ bool compare(std::u32string_view p_lhs, std::u32string_view p_rhs) {
+		return p_lhs == p_rhs;
+	}
+};
+
+size_t add_segment(MustacheTemplate::Data &data, std::u32string_view name, godot::HashMap<std::u32string_view, size_t, U32StringViewHash, U32StringViewEqual> &name_to_segment_index) {
+	auto itr = name_to_segment_index.find(name);
+	if (itr) {
+		return itr->value;
+	}
+
+	if (name == U".") {
+		size_t segment_index = data.m_segments.size();
+		size_t start_index = data.m_keys.size();
+		data.m_keys.push_back(godot::StringName("."));
+		data.m_segments.push_back(Segment(start_index, start_index + 1));
+		name_to_segment_index.insert(name, segment_index);
+		return segment_index;
+	}
+
+	size_t segment_index = data.m_segments.size();
+	size_t start_index = data.m_keys.size();
+	size_t begin = 0;
+	while (begin <= name.size()) {
+		size_t end = begin;
+		while (end < name.size() && name[end] != U'.') {
+			++end;
+		}
+
+		std::u32string_view part = name.substr(begin, end - begin);
+		std::u32string part_string(part);
+		data.m_keys.push_back(godot::StringName(part_string.c_str()));
+
+		if (end == name.size()) {
+			break;
+		}
+		begin = end + 1;
+	}
+
+	Segment segment(start_index, data.m_keys.size());
+	data.m_segments.push_back(segment);
+	name_to_segment_index.insert(name, segment_index);
+	return segment_index;
 }
 
-godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
+godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 	data.m_elements.clear();
 	data.m_keys.clear();
 	data.m_segments.clear();
+	data.m_partials.clear();
+	godot::HashMap<std::u32string_view, size_t, U32StringViewHash, U32StringViewEqual> segment_map;
 
 	MustacheSize elements = estimate_element_count(buffer);
 	data.m_elements.reserve(elements);
 	data.m_keys.reserve(elements * 3);
 	data.m_segments.reserve(elements);
+	data.m_partials.reserve(elements);
+	segment_map.reserve(elements);
 
 	std::u32string_view open_delim = U"{{";
 	std::u32string_view close_delim = U"}}";
@@ -184,10 +238,6 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
 		size_t open_pos = buffer.find(open_delim, pos);
 		if (open_pos == std::u32string_view::npos) {
 			break;
-		}
-
-		if (open_pos > pos) {
-			push_text(buffer.substr(pos, open_pos - pos));
 		}
 
 		bool triple = false;
@@ -269,6 +319,50 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
 			return godot::ERR_PARSE_ERROR;
 		}
 
+		// Check if standalone
+		size_t line_start = open_pos;
+		while (line_start > 0 && buffer[line_start - 1] != U'\n') {
+			--line_start;
+		}
+		bool before_whitespace = true;
+		for (size_t i = line_start; i < open_pos; ++i) {
+			if (!is_whitespace(buffer[i])) {
+				before_whitespace = false;
+				break;
+			}
+		}
+		size_t after_start = close_pos + tag_close.size();
+		size_t line_end = after_start;
+		while (line_end < buffer.size() && buffer[line_end] != U'\n') {
+			++line_end;
+		}
+		if (line_end < buffer.size()) {
+			++line_end; // include the newline
+		}
+		bool after_whitespace = true;
+		for (size_t i = after_start; i < line_end; ++i) {
+			if (buffer[i] == U'\n') {
+				break;
+			}
+			if (!is_whitespace(buffer[i])) {
+				after_whitespace = false;
+				break;
+			}
+		}
+		bool standalone = before_whitespace && after_whitespace;
+
+		bool is_standalone_type = type == MustacheElement::Type::Comment || type == MustacheElement::Type::SectionBegin || type == MustacheElement::Type::InvertedSectionBegin || type == MustacheElement::Type::SectionEnd || type == MustacheElement::Type::Partial || type == MustacheElement::Type::Delimiter;
+
+		if (standalone && is_standalone_type) {
+			if (line_start > pos) {
+				push_text(buffer.substr(pos, line_start - pos));
+			}
+		} else {
+			if (open_pos > pos) {
+				push_text(buffer.substr(pos, open_pos - pos));
+			}
+		}
+
 		TokenData token_data(tag_open, directive, tag_close);
 		size_t element_index = data.m_elements.size();
 
@@ -280,12 +374,8 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
 			MustacheElement element(name_view, prefix_view, token_data);
 			element.m_line = line_index;
 			data.m_elements.push_back(element);
-
-			size_t key_pos = static_cast<size_t>(name_view.data() - buffer.data());
-			add_key(data, name_view, key_pos, name_view.size());
 		} else {
-			size_t key_pos = static_cast<size_t>(name_view.data() - buffer.data());
-			size_t key_index = add_key(data, name_view, key_pos, name_view.size());
+			size_t key_index = add_segment(data, name_view, segment_map);
 
 			if (type == MustacheElement::Type::SectionBegin || type == MustacheElement::Type::InvertedSectionBegin) {
 				MustacheElement element(type, key_index, 0, token_data);
@@ -321,7 +411,11 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
 		}
 
 		line_index += count_newlines(buffer.substr(open_pos, close_pos + tag_close.size() - open_pos));
-		pos = close_pos + tag_close.size();
+		if (standalone && is_standalone_type) {
+			pos = line_end;
+		} else {
+			pos = close_pos + tag_close.size();
+		}
 	}
 
 	if (pos < buffer.size()) {
@@ -338,54 +432,122 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplateData &data) {
 } //namespace
 
 void MustacheTemplate::_bind_methods() {
-	godot::ClassDB::bind_method(godot::D_METHOD("parse_path", "path"), &MustacheTemplate::parse_path);
-	godot::ClassDB::bind_method(godot::D_METHOD("parse_string", "text"), &MustacheTemplate::parse_string);
+	godot::ClassDB::bind_method(godot::D_METHOD("parse_path", "path", "partials"), &MustacheTemplate::parse_path, memnew(NullMustacheTemplateProvider));
+	godot::ClassDB::bind_method(godot::D_METHOD("parse_string", "text", "partials"), &MustacheTemplate::parse_string, memnew(NullMustacheTemplateProvider));
 
 	godot::ClassDB::bind_method(godot::D_METHOD("execute", "value"), &MustacheTemplate::execute);
 }
 
-godot::Error MustacheTemplate::parse_path(const godot::String &path) {
+godot::Error MustacheTemplate::parse_path(const godot::String &path, const godot::Ref<MustacheTemplateProvider> &partials) {
 	if (!godot::FileAccess::file_exists(path)) {
 		return godot::ERR_FILE_NOT_FOUND;
 	}
 
-	return parse_string(godot::FileAccess::get_file_as_string(path));
+	return parse_string(godot::FileAccess::get_file_as_string(path), partials);
 }
 
-godot::Error MustacheTemplate::parse_string(const godot::String &string) {
+godot::Error MustacheTemplate::parse_string(const godot::String &string, const godot::Ref<MustacheTemplateProvider> &partials) {
 	m_buffer = string.utf32();
 	return parse({ m_buffer.get_data(), static_cast<size_t>(m_buffer.length()) }, m_data);
 }
 
 godot::String MustacheTemplate::execute(const godot::Variant &value) {
+	class Variant {
+	public:
+		enum Type {
+			VARIANT,
+			ARRAY,
+		};
+
+		Variant() : m_type(VARIANT) {
+		}
+
+		Variant(const godot::Variant &v) : m_type(Type::VARIANT), m_variant(v) {
+		}
+
+		bool init_section() {
+			if (m_variant.get_type() == godot::Variant::Type::ARRAY) {
+				m_type = Type::ARRAY;
+				m_index = 0;
+				godot::Array array = m_variant;
+				return !array.is_empty();
+			}
+
+			return m_variant;
+		}
+
+		godot::Variant get() const {
+			switch (m_type) {
+				case Type::VARIANT: {
+					return m_variant;
+				}
+				case Type::ARRAY: {
+					godot::Array arr = m_variant;
+					if (m_index < arr.size()) {
+						return arr[m_index];
+					}
+				}
+			}
+
+			return godot::Variant();
+		}
+
+		bool next() {
+			switch (m_type) {
+				case Type::VARIANT:
+					return false;
+				case Type::ARRAY: {
+					godot::Array arr = m_variant;
+					++m_index;
+					return m_index < arr.size();
+				}
+			}
+
+			return false;
+		}
+
+	private:
+		Type m_type;
+		godot::Variant m_variant;
+		uint64_t m_index;
+	};
+
 	StringBuilder builder;
-	godot::LocalVector<godot::Variant> context_stack;
+	godot::LocalVector<Variant, int64_t> context_stack;
+	context_stack.reserve(m_data.m_elements.size() / 2);
 	context_stack.push_back(value);
 	size_t element_index = 0;
 
-	auto resolve_key = [&](size_t key_index) -> godot::Variant {
-		if (key_index >= m_data.m_keys.size())
-			return godot::Variant();
-		const godot::StringName &key = m_data.m_keys[key_index];
-		godot::String key_str = key;
-		if (key_str == ".") {
-			return context_stack[context_stack.size() - 1];
+	auto resolve_key = [&](size_t segment_index) -> Variant {
+		ERR_FAIL_COND_V(segment_index >= m_data.m_segments.size(), godot::Variant());
+		auto segment = m_data.m_segments[segment_index];
+		if ((segment.second - segment.first) == 1 && m_data.m_keys[segment.first] == godot::StringName(".")) {
+			return Variant(context_stack[context_stack.size() - 1].get());
 		}
-		godot::PackedStringArray parts = key_str.split(".");
-		godot::Variant current = context_stack[context_stack.size() - 1];
-		for (int i = 0; i < parts.size(); ++i) {
-			const godot::String &part = parts[i];
-			if (current.get_type() == godot::Variant::Type::DICTIONARY) {
-				godot::Dictionary dict = current;
-				if (!dict.has(part)) {
-					return godot::Variant();
+		auto match_segment = [&](Variant &current) -> bool {
+			for (size_t i = segment.first; i < segment.second; ++i) {
+				ERR_FAIL_COND_V(i >= m_data.m_keys.size(), godot::Variant());
+				if (current.get().get_type() != godot::Variant::Type::DICTIONARY) {
+					current = Variant();
+					return i != segment.first;
 				}
-				current = dict[part];
-			} else {
-				return godot::Variant();
+				const godot::StringName &key = m_data.m_keys[i];
+				godot::Dictionary dict = current.get();
+				if (!dict.has(key)) {
+					current = Variant();
+					return i != segment.first;
+				}
+				current = Variant(dict[key]);
+			}
+			return true;
+		};
+		for (int64_t stack_idx = context_stack.size() - 1; stack_idx >= 0; --stack_idx) {
+			Variant current = context_stack[stack_idx];
+			if (match_segment(current)) {
+				return current;
 			}
 		}
-		return current;
+		return godot::Variant();
 	};
 
 	while (element_index < m_data.m_elements.size()) {
@@ -395,38 +557,42 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 				builder.append(elem.m_text.m_content);
 				break;
 			case MustacheElement::Type::EscapedVariable: {
-				godot::Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
-				godot::String str = stringify(resolved);
+				Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
+				godot::String str = stringify(resolved.get());
 				builder.append(escape_html({ str.ptr(), static_cast<size_t>(str.length()) }));
 			} break;
 			case MustacheElement::Type::RawVariable: {
-				godot::Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
-				godot::String str = stringify(resolved);
+				Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
+				godot::String str = stringify(resolved.get());
 				builder.append(str);
 			} break;
 			case MustacheElement::Type::TripleMustache: {
-				godot::Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
-				godot::String str = stringify(resolved);
+				Variant resolved = resolve_key(elem.m_variable.m_segmentIndex);
+				godot::String str = stringify(resolved.get());
 				builder.append(str);
 			} break;
 			case MustacheElement::Type::SectionBegin: {
-				godot::Variant resolved = resolve_key(elem.m_section.m_segmentIndex);
-				if (resolved) {
+				Variant resolved = resolve_key(elem.m_section.m_segmentIndex);
+				if (resolved.init_section()) {
 					context_stack.push_back(resolved);
 				} else {
 					element_index = elem.m_section.m_jumpIndex;
 				}
 			} break;
 			case MustacheElement::Type::InvertedSectionBegin: {
-				godot::Variant resolved = resolve_key(elem.m_section.m_segmentIndex);
-				if (!resolved) {
-					context_stack.push_back(resolved);
-				} else {
+				Variant resolved = resolve_key(elem.m_section.m_segmentIndex);
+				if (resolved.get()) {
 					element_index = elem.m_section.m_jumpIndex;
+				} else {
+					context_stack.push_back(resolved);
 				}
 			} break;
 			case MustacheElement::Type::SectionEnd:
-				context_stack.remove_at(context_stack.size() - 1);
+				if (context_stack[context_stack.size() - 1].next()) {
+					element_index = elem.m_section.m_jumpIndex;
+				} else {
+					context_stack.remove_at(context_stack.size() - 1);
+				}
 				break;
 			default:
 				break;

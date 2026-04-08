@@ -9,6 +9,8 @@
 
 #include <string_view>
 
+class MustacheTemplateProvider;
+
 struct TokenData {
 	inline TokenData(std::u32string_view beginDelimiter, std::u32string_view content, std::u32string_view endDelimiter) : m_beginDelimiter(beginDelimiter), m_content(content), m_endDelimiter(endDelimiter) {
 	}
@@ -86,21 +88,22 @@ using Segment = godot::Pair<size_t, size_t>;
 
 using MustacheSize = uint64_t;
 
-struct MustacheTemplateData {
-	godot::LocalVector<MustacheElement, MustacheSize> m_elements;
-	godot::LocalVector<godot::StringName, MustacheSize> m_keys;
-	godot::LocalVector<Segment, MustacheSize> m_segments;
-};
-
 class MustacheTemplate : public godot::RefCounted {
 	GDCLASS(MustacheTemplate, godot::RefCounted)
 
 public:
+	struct Data {
+		godot::LocalVector<MustacheElement, MustacheSize> m_elements;
+		godot::LocalVector<godot::StringName, MustacheSize> m_keys;
+		godot::LocalVector<Segment, MustacheSize> m_segments;
+		godot::LocalVector<godot::Ref<MustacheTemplate>, MustacheSize> m_partials;
+	};
+
 	MustacheTemplate() = default;
 	~MustacheTemplate() override = default;
 
-	godot::Error parse_path(const godot::String &path);
-	godot::Error parse_string(const godot::String &text);
+	godot::Error parse_path(const godot::String &path, const godot::Ref<MustacheTemplateProvider> &partials);
+	godot::Error parse_string(const godot::String &text, const godot::Ref<MustacheTemplateProvider> &partials);
 
 	godot::String execute(const godot::Variant &value);
 
@@ -108,6 +111,7 @@ protected:
 	static void _bind_methods();
 
 private:
+	godot::Ref<MustacheTemplateProvider> m_partialProvider;
 	godot::Char32String m_buffer;
-	MustacheTemplateData m_data;
+	Data m_data;
 };
