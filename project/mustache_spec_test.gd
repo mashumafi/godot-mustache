@@ -36,13 +36,16 @@ class DictionaryMustacheTemplateProvider:
 	var templates : Dictionary[String, MustacheTemplate] = {}
 
 	func _get_template(name: String) -> MustacheTemplate:
-		return templates[name]
+		if name in templates:
+			return templates[name]
+
+		return MustacheTemplate.new()
 
 	func set_templates(partials: Dictionary):
 		for partial in partials:
 			var template := MustacheTemplate.new()
-			template.parse_string(partials[partial])
 			self.templates[partial] = template
+			template.parse_string(partials[partial], self)
 
 func _create_tests_from_array(specs: Array):
 	for spec in specs:
