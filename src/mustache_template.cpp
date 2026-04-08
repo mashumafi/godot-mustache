@@ -86,21 +86,18 @@ bool element_needs_name(MustacheElement::Type type) {
 	}
 }
 
-std::u32string_view next_line(std::u32string_view &text) {
-	size_t index = text.find(U"\n");
-	if (index == std::u32string_view::npos) {
-		std::u32string_view result = text;
-		text = U"";
-		return result;
+bool is_standalone_type(MustacheElement::Type type) {
+	switch (type) {
+		case MustacheElement::Type::Comment:
+		case MustacheElement::Type::SectionBegin:
+		case MustacheElement::Type::InvertedSectionBegin:
+		case MustacheElement::Type::SectionEnd:
+		case MustacheElement::Type::Partial:
+		case MustacheElement::Type::Delimiter:
+			return true;
+		default:
+			return false;
 	}
-
-	std::u32string_view result = text.substr(0, index);
-	text = text.substr(index + 1);
-	return result;
-}
-
-bool starts_with(std::u32string_view subject, std::u32string_view prefix) {
-	return subject.size() >= prefix.size() && subject.compare(0, prefix.size(), prefix) == 0;
 }
 
 bool is_whitespace(char32_t c) {
@@ -203,12 +200,113 @@ size_t add_segment(MustacheTemplate::Data &data, std::u32string_view name, godot
 	return segment_index;
 }
 
-godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
+struct ParseTagResult {
+	MustacheElement::Type type = MustacheElement::Type::Invalid;
+	std::u32string_view name_view;
+	std::u32string_view prefix_view;
+	std::u32string_view tag_open;
+	std::u32string_view tag_close;
+	size_t close_pos = 0;
+	std::u32string_view directive;
+};
+
+godot::Error parse_tag(std::u32string_view buffer, size_t open_pos, std::u32string_view &open_delim, std::u32string_view &close_delim, ParseTagResult &result) {
+	bool triple = false;
+	result.tag_open = open_delim;
+	result.tag_close = close_delim;
+	if (open_delim == U"{{" && open_pos + 3 <= buffer.size() && buffer.substr(open_pos, 3) == U"{{{") {
+		triple = true;
+		result.tag_open = U"{{{";
+		result.tag_close = U"}}}";
+	}
+
+	size_t content_start = open_pos + result.tag_open.size();
+	size_t close_pos = buffer.find(result.tag_close, content_start);
+	if (close_pos == std::u32string_view::npos) {
+		return godot::ERR_PARSE_ERROR;
+	}
+	result.close_pos = close_pos;
+
+	std::u32string_view raw_content = buffer.substr(content_start, close_pos - content_start);
+	size_t raw_begin = 0;
+	while (raw_begin < raw_content.size() && is_whitespace(raw_content[raw_begin])) {
+		++raw_begin;
+	}
+	size_t raw_end = raw_content.size();
+	while (raw_end > raw_begin && is_whitespace(raw_content[raw_end - 1])) {
+		--raw_end;
+	}
+	result.directive = raw_content.substr(raw_begin, raw_end - raw_begin);
+
+	if (result.directive.empty()) {
+		return godot::ERR_PARSE_ERROR;
+	}
+
+	if (triple) {
+		result.type = MustacheElement::Type::TripleMustache;
+		result.name_view = trim(result.directive);
+		return godot::OK;
+	}
+
+	char32_t marker = result.directive[0];
+	switch (marker) {
+		case U'!':
+			result.type = MustacheElement::Type::Comment;
+			result.name_view = std::u32string_view();
+			break;
+		case U'=': {
+			std::u32string_view inner = trim(result.directive.substr(1));
+			if (inner.size() < 3 || inner.back() != U'=') {
+				return godot::ERR_PARSE_ERROR;
+			}
+			inner = trim(inner.substr(0, inner.size() - 1));
+			size_t sep = inner.find(U' ');
+			if (sep == std::u32string_view::npos) {
+				return godot::ERR_PARSE_ERROR;
+			}
+			open_delim = trim(inner.substr(0, sep));
+			close_delim = trim(inner.substr(sep + 1));
+			result.type = MustacheElement::Type::Delimiter;
+			break;
+		}
+		case U'#':
+			result.type = MustacheElement::Type::SectionBegin;
+			result.name_view = trim(result.directive.substr(1));
+			break;
+		case U'^':
+			result.type = MustacheElement::Type::InvertedSectionBegin;
+			result.name_view = trim(result.directive.substr(1));
+			break;
+		case U'/':
+			result.type = MustacheElement::Type::SectionEnd;
+			result.name_view = trim(result.directive.substr(1));
+			break;
+		case U'>':
+			result.type = MustacheElement::Type::Partial;
+			result.name_view = trim(result.directive.substr(1));
+			result.prefix_view = std::u32string_view();
+			break;
+		case U'&':
+			result.type = MustacheElement::Type::RawVariable;
+			result.name_view = trim(result.directive.substr(1));
+			break;
+		default:
+			result.type = MustacheElement::Type::EscapedVariable;
+			result.name_view = trim(result.directive);
+			break;
+	}
+
+	return godot::OK;
+}
+
+godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data, const godot::Ref<MustacheTemplateProvider> &provider) {
 	data.m_elements.clear();
 	data.m_keys.clear();
 	data.m_segments.clear();
 	data.m_partials.clear();
 	godot::HashMap<std::u32string_view, size_t, U32StringViewHash, U32StringViewEqual> segment_map;
+
+	godot::HashMap<std::u32string_view, size_t, U32StringViewHash, U32StringViewEqual> partial_map;
 
 	MustacheSize elements = estimate_element_count(buffer);
 	data.m_elements.reserve(elements);
@@ -216,6 +314,7 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 	data.m_segments.reserve(elements);
 	data.m_partials.reserve(elements);
 	segment_map.reserve(elements);
+	partial_map.reserve(elements);
 
 	std::u32string_view open_delim = U"{{";
 	std::u32string_view close_delim = U"}}";
@@ -228,8 +327,7 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 		if (text.empty()) {
 			return;
 		}
-		MustacheElement elem(MustacheElement::Type::Text, text);
-		elem.m_line = line_index;
+		MustacheElement elem(MustacheElement::Type::Text, text, line_index);
 		data.m_elements.push_back(elem);
 		line_index += count_newlines(text);
 	};
@@ -240,82 +338,13 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 			break;
 		}
 
-		bool triple = false;
-		std::u32string_view tag_open = open_delim;
-		std::u32string_view tag_close = close_delim;
-		if (open_delim == U"{{" && open_pos + 3 <= buffer.size() && buffer.substr(open_pos, 3) == U"{{{") {
-			triple = true;
-			tag_open = U"{{{";
-			tag_close = U"}}}";
+		ParseTagResult result;
+		godot::Error err = parse_tag(buffer, open_pos, open_delim, close_delim, result);
+		if (err != godot::OK) {
+			return err;
 		}
 
-		size_t content_start = open_pos + tag_open.size();
-		size_t close_pos = buffer.find(tag_close, content_start);
-		if (close_pos == std::u32string_view::npos) {
-			return godot::ERR_PARSE_ERROR;
-		}
-
-		std::u32string_view raw_content = buffer.substr(content_start, close_pos - content_start);
-		size_t raw_begin = 0;
-		while (raw_begin < raw_content.size() && is_whitespace(raw_content[raw_begin])) {
-			++raw_begin;
-		}
-		size_t raw_end = raw_content.size();
-		while (raw_end > raw_begin && is_whitespace(raw_content[raw_end - 1])) {
-			--raw_end;
-		}
-		std::u32string_view directive = raw_content.substr(raw_begin, raw_end - raw_begin);
-
-		MustacheElement::Type type = MustacheElement::Type::Invalid;
-		std::u32string_view name_view;
-		std::u32string_view prefix_view;
-
-		if (directive.empty()) {
-			return godot::ERR_PARSE_ERROR;
-		}
-
-		char32_t marker = directive[0];
-		if (!triple && marker == U'!') {
-			type = MustacheElement::Type::Comment;
-			name_view = std::u32string_view();
-		} else if (!triple && marker == U'=') {
-			std::u32string_view inner = trim(directive.substr(1));
-			if (inner.size() < 3 || inner.back() != U'=') {
-				return godot::ERR_PARSE_ERROR;
-			}
-			inner = trim(inner.substr(0, inner.size() - 1));
-			size_t sep = inner.find(U' ');
-			if (sep == std::u32string_view::npos) {
-				return godot::ERR_PARSE_ERROR;
-			}
-			open_delim = trim(inner.substr(0, sep));
-			close_delim = trim(inner.substr(sep + 1));
-			type = MustacheElement::Type::Delimiter;
-		} else if (!triple && marker == U'#') {
-			type = MustacheElement::Type::SectionBegin;
-			name_view = trim(directive.substr(1));
-		} else if (!triple && marker == U'^') {
-			type = MustacheElement::Type::InvertedSectionBegin;
-			name_view = trim(directive.substr(1));
-		} else if (!triple && marker == U'/') {
-			type = MustacheElement::Type::SectionEnd;
-			name_view = trim(directive.substr(1));
-		} else if (!triple && marker == U'>') {
-			type = MustacheElement::Type::Partial;
-			name_view = trim(directive.substr(1));
-			prefix_view = std::u32string_view();
-		} else if (!triple && marker == U'&') {
-			type = MustacheElement::Type::RawVariable;
-			name_view = trim(directive.substr(1));
-		} else if (triple) {
-			type = MustacheElement::Type::TripleMustache;
-			name_view = trim(directive);
-		} else {
-			type = MustacheElement::Type::EscapedVariable;
-			name_view = trim(directive);
-		}
-
-		if (element_needs_name(type) && name_view.empty()) {
+		if (element_needs_name(result.type) && result.name_view.empty()) {
 			return godot::ERR_PARSE_ERROR;
 		}
 
@@ -331,7 +360,7 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 				break;
 			}
 		}
-		size_t after_start = close_pos + tag_close.size();
+		size_t after_start = result.close_pos + result.tag_close.size();
 		size_t line_end = after_start;
 		while (line_end < buffer.size() && buffer[line_end] != U'\n') {
 			++line_end;
@@ -351,9 +380,17 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 		}
 		bool standalone = before_whitespace && after_whitespace;
 
-		bool is_standalone_type = type == MustacheElement::Type::Comment || type == MustacheElement::Type::SectionBegin || type == MustacheElement::Type::InvertedSectionBegin || type == MustacheElement::Type::SectionEnd || type == MustacheElement::Type::Partial || type == MustacheElement::Type::Delimiter;
+		if (result.type == MustacheElement::Type::Partial) {
+			if (standalone) {
+				result.prefix_view = buffer.substr(line_start, open_pos - line_start);
+			} else {
+				result.prefix_view = std::u32string_view();
+			}
+		}
 
-		if (standalone && is_standalone_type) {
+		bool is_standalone = is_standalone_type(result.type);
+
+		if (standalone && is_standalone) {
 			if (line_start > pos) {
 				push_text(buffer.substr(pos, line_start - pos));
 			}
@@ -363,28 +400,40 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 			}
 		}
 
-		TokenData token_data(tag_open, directive, tag_close);
+		TokenData token_data(result.tag_open, result.directive, result.tag_close);
 		size_t element_index = data.m_elements.size();
 
-		if (type == MustacheElement::Type::Comment || type == MustacheElement::Type::Delimiter) {
-			MustacheElement element(type, 0, token_data);
-			element.m_line = line_index;
+		if (result.type == MustacheElement::Type::Comment || result.type == MustacheElement::Type::Delimiter) {
+			MustacheElement element(result.type, 0, token_data, line_index);
 			data.m_elements.push_back(element);
-		} else if (type == MustacheElement::Type::Partial) {
-			MustacheElement element(name_view, prefix_view, token_data);
-			element.m_line = line_index;
+		} else if (result.type == MustacheElement::Type::Partial) {
+			std::u32string_view name = result.name_view;
+			auto itr = partial_map.find(name);
+			size_t partial_index;
+			if (itr) {
+				partial_index = itr->value;
+			} else {
+				std::u32string name_u32(name);
+				godot::String name_str = godot::String(name_u32.c_str());
+				godot::Ref<MustacheTemplate> partial = provider->get_template(name_str);
+				if (partial.is_null()) {
+					return godot::ERR_PARSE_ERROR;
+				}
+				partial_index = data.m_partials.size();
+				data.m_partials.push_back(partial);
+				partial_map.insert(name, partial_index);
+			}
+			MustacheElement element(partial_index, result.prefix_view, token_data, line_index);
 			data.m_elements.push_back(element);
 		} else {
-			size_t key_index = add_segment(data, name_view, segment_map);
+			size_t key_index = add_segment(data, result.name_view, segment_map);
 
-			if (type == MustacheElement::Type::SectionBegin || type == MustacheElement::Type::InvertedSectionBegin) {
-				MustacheElement element(type, key_index, 0, token_data);
-				element.m_line = line_index;
+			if (result.type == MustacheElement::Type::SectionBegin || result.type == MustacheElement::Type::InvertedSectionBegin) {
+				MustacheElement element(result.type, key_index, 0, token_data, line_index);
 				data.m_elements.push_back(element);
 				section_stack.push_back(element_index);
-			} else if (type == MustacheElement::Type::SectionEnd) {
-				MustacheElement element(type, key_index, 0, token_data);
-				element.m_line = line_index;
+			} else if (result.type == MustacheElement::Type::SectionEnd) {
+				MustacheElement element(result.type, key_index, 0, token_data, line_index);
 				data.m_elements.push_back(element);
 
 				if (section_stack.empty()) {
@@ -404,17 +453,16 @@ godot::Error parse(std::u32string_view buffer, MustacheTemplate::Data &data) {
 				data.m_elements[begin_index].m_section.m_jumpIndex = element_index;
 				data.m_elements[element_index].m_section.m_jumpIndex = begin_index;
 			} else {
-				MustacheElement element(type, key_index, token_data);
-				element.m_line = line_index;
+				MustacheElement element(result.type, key_index, token_data, line_index);
 				data.m_elements.push_back(element);
 			}
 		}
 
-		line_index += count_newlines(buffer.substr(open_pos, close_pos + tag_close.size() - open_pos));
-		if (standalone && is_standalone_type) {
+		line_index += count_newlines(buffer.substr(open_pos, result.close_pos + result.tag_close.size() - open_pos));
+		if (standalone && is_standalone) {
 			pos = line_end;
 		} else {
-			pos = close_pos + tag_close.size();
+			pos = result.close_pos + result.tag_close.size();
 		}
 	}
 
@@ -448,7 +496,7 @@ godot::Error MustacheTemplate::parse_path(const godot::String &path, const godot
 
 godot::Error MustacheTemplate::parse_string(const godot::String &string, const godot::Ref<MustacheTemplateProvider> &partials) {
 	m_buffer = string.utf32();
-	return parse({ m_buffer.get_data(), static_cast<size_t>(m_buffer.length()) }, m_data);
+	return parse({ m_buffer.get_data(), static_cast<size_t>(m_buffer.length()) }, m_data, partials);
 }
 
 godot::String MustacheTemplate::execute(const godot::Variant &value) {
@@ -594,6 +642,14 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 					context_stack.remove_at(context_stack.size() - 1);
 				}
 				break;
+			case MustacheElement::Type::Partial: {
+				builder.append(elem.m_partial.m_prefix);
+				const auto &partial = m_data.m_partials[elem.m_partial.m_partialIndex];
+				if (partial.is_valid()) {
+					godot::String result = partial->execute(context_stack[context_stack.size() - 1].get());
+					builder.append(result);
+				}
+			} break;
 			default:
 				break;
 		}

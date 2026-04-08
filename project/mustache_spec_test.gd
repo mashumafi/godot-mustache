@@ -30,13 +30,31 @@ func _fix_ints(value) -> Variant:
 		return _fix_int(value)
 	return value
 
+class DictionaryMustacheTemplateProvider:
+	extends ScriptableMustacheTemplateProvider
+
+	var templates : Dictionary[String, MustacheTemplate] = {}
+
+	func _get_template(name: String) -> MustacheTemplate:
+		return templates[name]
+
+	func set_templates(partials: Dictionary):
+		for partial in partials:
+			var template := MustacheTemplate.new()
+			template.parse_string(partials[partial])
+			self.templates[partial] = template
+
 func _create_tests_from_array(specs: Array):
 	for spec in specs:
 		var test := TestCallable.new()
 		test.name = spec.name
 		test.test = func() -> Array[Error]:
 			var template := MustacheTemplate.new()
-			var parse_string_error := template.parse_string(spec.template)
+			var partials = DictionaryMustacheTemplateProvider.new()
+			if "partials" in spec:
+				partials.set_templates(spec["partials"])
+
+			var parse_string_error := template.parse_string(spec.template, partials)
 			if parse_string_error != OK:
 				printerr("Parsing failed for ", test.name)
 				return [parse_string_error]
