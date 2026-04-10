@@ -3,21 +3,22 @@
 #include "mustache_template.h"
 
 #include <godot_cpp/classes/object.hpp>
-#include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
+#include <godot_cpp/templates/hash_map.hpp>
 
-using namespace godot;
-
-class MustacheTemplateProvider : public godot::RefCounted {
-	GDCLASS(MustacheTemplateProvider, godot::RefCounted);
+class MustacheTemplateProvider : public godot::Resource {
+	GDCLASS(MustacheTemplateProvider, godot::Resource);
 
 public:
-	virtual godot::Ref<MustacheTemplate> get_template(godot::String name) = 0;
+	void set_fallback(const godot::Ref<MustacheTemplateProvider> &p_fallback);
+	virtual godot::Ref<MustacheTemplate> get_template(const godot::String &p_name);
 
 protected:
-	static void _bind_methods() {
-		godot::ClassDB::bind_method(godot::D_METHOD("get_template", "name"), &MustacheTemplateProvider::get_template);
-	}
+	static void _bind_methods();
+
+private:
+	godot::Ref<MustacheTemplateProvider> fallback;
 };
 
 class ScriptableMustacheTemplateProvider : public MustacheTemplateProvider {
@@ -26,13 +27,7 @@ class ScriptableMustacheTemplateProvider : public MustacheTemplateProvider {
 public:
 	GDVIRTUAL1R(godot::Ref<MustacheTemplate>, _get_template, godot::String);
 
-	virtual godot::Ref<MustacheTemplate> get_template(godot::String name) override {
-		godot::Ref<MustacheTemplate> ret;
-		if (GDVIRTUAL_CALL(_get_template, name, ret)) {
-			return ret;
-		}
-		return godot::Ref<MustacheTemplate>();
-	}
+	virtual godot::Ref<MustacheTemplate> get_template(const godot::String &p_name) override;
 
 protected:
 	static void _bind_methods() {
@@ -40,15 +35,33 @@ protected:
 	}
 };
 
-class NullMustacheTemplateProvider : public MustacheTemplateProvider {
-	GDCLASS(NullMustacheTemplateProvider, MustacheTemplateProvider);
+class DirMustacheTemplateProvider : public MustacheTemplateProvider {
+	GDCLASS(DirMustacheTemplateProvider, MustacheTemplateProvider);
 
 public:
-	virtual godot::Ref<MustacheTemplate> get_template(godot::String name) override {
-		return memnew(MustacheTemplate);
-	}
+	DirMustacheTemplateProvider();
+
+	void set_path(const godot::String &p_path);
+	godot::String get_path() const;
+
+	void set_extension(const godot::String &p_extension);
+	godot::String get_extension() const;
+
+	void clear_cache();
+
+	virtual godot::Ref<MustacheTemplate> get_template(const godot::String &p_name) override;
 
 protected:
-	static void _bind_methods() {
-	}
+	static void _bind_methods();
+
+private:
+	godot::String path;
+	godot::String extension;
+
+	struct Cache {
+		godot::Ref<MustacheTemplate> tmpl;
+		uint64_t modified_time;
+	};
+
+	godot::HashMap<godot::String, Cache> cache;
 };

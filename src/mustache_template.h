@@ -44,6 +44,8 @@ public:
 	}
 	inline MustacheElement(std::u32string_view text, uint64_t line) : MustacheElement(Type::Text, text, line) {
 	}
+	inline MustacheElement(Type type, const TokenData &data, uint64_t line) : m_type(type), m_tokenData{ data }, m_line(line) {
+	}
 	inline MustacheElement(Type type, size_t segmentIndex, const TokenData &data, uint64_t line) : m_type(type), m_variable{ segmentIndex, data }, m_line(line) {
 	}
 	inline MustacheElement(Type type, size_t segmentIndex, size_t jumpIndex, const TokenData &data, uint64_t line) : m_type(type), m_section{ segmentIndex, std::u32string_view(), jumpIndex, data }, m_line(line) {
@@ -81,6 +83,8 @@ public:
 			size_t m_jumpIndex;
 			TokenData m_data;
 		} m_section;
+
+		TokenData m_tokenData;
 	};
 };
 

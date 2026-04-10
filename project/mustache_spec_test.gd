@@ -44,8 +44,11 @@ class DictionaryMustacheTemplateProvider:
 	func set_templates(partials: Dictionary):
 		for partial in partials:
 			var template := MustacheTemplate.new()
-			self.templates[partial] = template
-			template.parse_string(partials[partial], self)
+			templates[partial] = template
+
+		for template in templates:
+			var parsed := templates[template].parse_string(partials[template], self)
+			assert(parsed == OK)
 
 func _create_tests_from_array(specs: Array):
 	for spec in specs:

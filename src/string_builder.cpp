@@ -30,6 +30,11 @@
 
 #include "string_builder.h"
 
+void StringBuilder::reserve(uint32_t size) {
+	strings.reserve(size);
+	views.reserve(size);
+}
+
 StringBuilder &StringBuilder::append(const godot::String &p_string) {
 	strings.push_back(p_string);
 	return append({ p_string.ptr(), static_cast<size_t>(p_string.length()) });
@@ -47,6 +52,15 @@ StringBuilder &StringBuilder::append(std::u32string_view p_string) {
 	return *this;
 }
 
+void StringBuilder::pop_back()
+{
+	if (views.is_empty()) {
+		return;
+	}
+
+	views.remove_at(views.size() - 1);
+}
+
 godot::String StringBuilder::as_string() const {
 	if (string_length == 0) {
 		return "";
@@ -56,12 +70,12 @@ godot::String StringBuilder::as_string() const {
 	string.resize(string_length + 1);
 	char32_t *buffer = string.ptrw();
 
-	int current_position = 0;
+	size_t current_position = 0;
 
 	for (std::u32string_view s : views) {
-		const int32_t str_len = s.size();
+		size_t str_len = s.size();
 
-		for (int32_t j = 0; j < str_len; j++) {
+		for (size_t j = 0; j < str_len; j++) {
 			buffer[current_position + j] = s[j];
 		}
 

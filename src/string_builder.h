@@ -36,12 +36,11 @@
 #include <string_view>
 
 class StringBuilder {
-	uint32_t string_length = 0;
-
-	godot::LocalVector<godot::String> strings;
-	godot::LocalVector<std::u32string_view> views;
-
 public:
+	StringBuilder() {}
+
+	void reserve(uint32_t size);
+
 	StringBuilder &append(const godot::String &p_string);
 	StringBuilder &append(std::u32string_view p_string);
 
@@ -69,11 +68,17 @@ public:
 		return string_length;
 	}
 
+	void pop_back();
+
 	godot::String as_string() const;
 
 	_FORCE_INLINE_ operator godot::String() const {
 		return as_string();
 	}
 
-	StringBuilder() {}
+private:
+	int64_t string_length = 0;
+
+	godot::LocalVector<godot::String> strings;
+	godot::LocalVector<std::u32string_view> views;
 };

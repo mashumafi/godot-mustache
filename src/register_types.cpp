@@ -17,6 +17,7 @@ void initialize_gdextension_types(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MustacheTemplate);
 	GDREGISTER_ABSTRACT_CLASS(MustacheTemplateProvider);
 	GDREGISTER_CLASS(ScriptableMustacheTemplateProvider);
+	GDREGISTER_CLASS(DirMustacheTemplateProvider);
 }
 
 void uninitialize_gdextension_types(ModuleInitializationLevel p_level) {
