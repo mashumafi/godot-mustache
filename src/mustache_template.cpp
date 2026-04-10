@@ -593,13 +593,15 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 		max_partial_element_count = godot::MAX(max_partial_element_count, (*partial)->m_data.m_elements.size());
 	}
 
+	// Output text
 	StringBuilder builder;
-	// each line in partial can result in appending 2 values to the buffer
+	// Each line in partial can result in appending 2 values to the buffer
 	uint32_t partial_buffer_with_prefix = 2 * expected_partial_recursion_depth;
 	builder.reserve(m_data.m_elements.size() + max_partial_element_count * partial_buffer_with_prefix);
 
+	// Stack used for sections
 	godot::LocalVector<MustacheValue, int64_t> context_stack;
-	// reserving half because sections take 2 tags (open/close)
+	// Reserving half because sections take 2 tags (open/close)
 	context_stack.reserve(m_data.m_elements.size() / 2 + max_partial_element_count * expected_partial_recursion_depth / 2);
 	context_stack.push_back(value);
 
@@ -610,11 +612,13 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 		size_t index;
 		godot::String prefix;
 	};
+	// Stack used for partials
 	godot::LocalVector<DataSpan, int64_t> data_stack;
 	uint32_t data_stack_estimate = 1 + (m_data.m_partials.is_empty() ? 0 : expected_partial_recursion_depth);
 	data_stack.reserve(data_stack_estimate);
 	data_stack.push_back({ &m_data, 0, "" });
 
+	// Prefixes from partials
 	StringBuilder prefixes;
 	prefixes.reserve(data_stack_estimate);
 
