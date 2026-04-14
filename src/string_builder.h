@@ -43,7 +43,9 @@ public:
 
 	StringBuilder &append(const godot::String &p_string);
 	StringBuilder &append(std::u32string_view p_string);
-	StringBuilder &append_with_prefix(const godot::String &p_string, const godot::String &prefix);
+
+	StringBuilder &append_with_prefix(const godot::String &prefix, const godot::String &p_string, bool is_last);
+	StringBuilder &append_with_prefix(const godot::String &prefix, std::u32string_view p_string, bool is_last);
 
 	_FORCE_INLINE_ StringBuilder &operator+(const godot::String &p_string) {
 		return append(p_string);

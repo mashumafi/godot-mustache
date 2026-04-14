@@ -778,24 +778,25 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 			const MustacheElement &elem = current_data->data->m_elements[current_data->index];
 			switch (elem.m_type) {
 				case MustacheElement::Type::Text: {
-					builder.append_with_prefix(::to_string(elem.m_text.m_content), current_data->prefix);
+					bool is_last = current_data->index == current_data->data->m_elements.size() - 1;
+					builder.append_with_prefix(current_data->prefix, elem.m_text.m_content, is_last);
 					break;
 				}
 				case MustacheElement::Type::EscapedVariable: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
 					godot::String escaped = escape_html({ str.ptr(), static_cast<size_t>(str.length()) });
-					builder.append_with_prefix(escaped, current_data->prefix);
+					builder.append(escaped);
 				} break;
 				case MustacheElement::Type::RawVariable: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
-					builder.append_with_prefix(str, current_data->prefix);
+					builder.append(str);
 				} break;
 				case MustacheElement::Type::TripleMustache: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
-					builder.append_with_prefix(str, current_data->prefix);
+					builder.append(str);
 				} break;
 				case MustacheElement::Type::SectionBegin: {
 					MustacheValue resolved = resolve_key(elem.m_section.m_segmentIndex);

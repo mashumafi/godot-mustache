@@ -52,30 +52,35 @@ StringBuilder &StringBuilder::append(std::u32string_view p_string) {
 	return *this;
 }
 
-StringBuilder &StringBuilder::append_with_prefix(const godot::String &p_string, const godot::String &prefix) {
+StringBuilder &StringBuilder::append_with_prefix(const godot::String &prefix, const godot::String &p_string, bool is_last) {
+	// Hold the string to keep the buffer alive
+	strings.push_back(p_string);
+
+	return append_with_prefix(prefix, { p_string.ptr(), static_cast<size_t>(p_string.length()) }, is_last);
+}
+
+StringBuilder &StringBuilder::append_with_prefix(const godot::String &prefix, std::u32string_view p_string, bool is_last) {
 	if (prefix.is_empty()) {
 		return append(p_string);
 	}
 
-	// Hold the string to keep the buffer alive
-	strings.push_back(p_string);
-
-	std::u32string_view content{ p_string.ptr(), static_cast<size_t>(p_string.length()) };
-	size_t last_pos = 0;
-
-	for (size_t i = 0; i < content.size(); ++i) {
-		if (content[i] == U'\n') {
-			// Append text up to and including the newline
-			append(std::u32string_view(content.data() + last_pos, i - last_pos + 1));
-			// Append the prefix
+	for (size_t i = 0; i < p_string.size(); ++i) {
+		if (p_string[i] == U'\n') {
+			if (i + 1 == p_string.size() && is_last) {
+				// Don't add a prefix if the string ends with a newline
+				append(p_string);
+				return *this;
+			}
+			append(p_string.substr(0, i + 1));
 			append(prefix);
-			last_pos = i + 1;
+			p_string.remove_prefix(i + 1);
+			i = 0;
 		}
 	}
 
 	// Append any remaining text
-	if (last_pos < content.size()) {
-		append(std::u32string_view(content.data() + last_pos, content.size() - last_pos));
+	if (!p_string.empty()) {
+		append(p_string);
 	}
 
 	return *this;
