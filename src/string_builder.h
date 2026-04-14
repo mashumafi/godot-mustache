@@ -43,6 +43,7 @@ public:
 
 	StringBuilder &append(const godot::String &p_string);
 	StringBuilder &append(std::u32string_view p_string);
+	StringBuilder &append_with_prefix(const godot::String &p_string, const godot::String &prefix);
 
 	_FORCE_INLINE_ StringBuilder &operator+(const godot::String &p_string) {
 		return append(p_string);
@@ -67,8 +68,6 @@ public:
 	_FORCE_INLINE_ uint32_t get_string_length() const {
 		return string_length;
 	}
-
-	void pop_back();
 
 	godot::String as_string() const;
 

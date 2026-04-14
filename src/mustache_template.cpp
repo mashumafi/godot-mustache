@@ -777,23 +777,25 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 		while (current_data->index < current_data->data->m_elements.size()) {
 			const MustacheElement &elem = current_data->data->m_elements[current_data->index];
 			switch (elem.m_type) {
-				case MustacheElement::Type::Text:
-					builder.append(elem.m_text.m_content);
+				case MustacheElement::Type::Text: {
+					builder.append_with_prefix(::to_string(elem.m_text.m_content), current_data->prefix);
 					break;
+				}
 				case MustacheElement::Type::EscapedVariable: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
-					builder.append(escape_html({ str.ptr(), static_cast<size_t>(str.length()) }));
+					godot::String escaped = escape_html({ str.ptr(), static_cast<size_t>(str.length()) });
+					builder.append_with_prefix(escaped, current_data->prefix);
 				} break;
 				case MustacheElement::Type::RawVariable: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
-					builder.append(str);
+					builder.append_with_prefix(str, current_data->prefix);
 				} break;
 				case MustacheElement::Type::TripleMustache: {
 					MustacheValue resolved = resolve_key(elem.m_variable.m_segmentIndex);
 					godot::String str = stringify(resolved.get());
-					builder.append(str);
+					builder.append_with_prefix(str, current_data->prefix);
 				} break;
 				case MustacheElement::Type::SectionBegin: {
 					MustacheValue resolved = resolve_key(elem.m_section.m_segmentIndex);
@@ -831,7 +833,7 @@ godot::String MustacheTemplate::execute(const godot::Variant &value) {
 					++current_data->index;
 					data_stack.push_back({ &partial->m_data, 0, current_data->prefix + ::to_string(elem.m_partial.m_prefix) }); // TODO: Create and concat string in one allocation
 					current_data = &data_stack[data_stack.size() - 1];
-					builder.append(current_data->prefix); // TODO: Make this happen on all new lines
+					builder.append(current_data->prefix);
 					continue;
 				} break;
 				default:

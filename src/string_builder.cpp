@@ -52,13 +52,33 @@ StringBuilder &StringBuilder::append(std::u32string_view p_string) {
 	return *this;
 }
 
-void StringBuilder::pop_back()
-{
-	if (views.is_empty()) {
-		return;
+StringBuilder &StringBuilder::append_with_prefix(const godot::String &p_string, const godot::String &prefix) {
+	if (prefix.is_empty()) {
+		return append(p_string);
 	}
 
-	views.remove_at(views.size() - 1);
+	// Hold the string to keep the buffer alive
+	strings.push_back(p_string);
+
+	std::u32string_view content{ p_string.ptr(), static_cast<size_t>(p_string.length()) };
+	size_t last_pos = 0;
+
+	for (size_t i = 0; i < content.size(); ++i) {
+		if (content[i] == U'\n') {
+			// Append text up to and including the newline
+			append(std::u32string_view(content.data() + last_pos, i - last_pos + 1));
+			// Append the prefix
+			append(prefix);
+			last_pos = i + 1;
+		}
+	}
+
+	// Append any remaining text
+	if (last_pos < content.size()) {
+		append(std::u32string_view(content.data() + last_pos, content.size() - last_pos));
+	}
+
+	return *this;
 }
 
 godot::String StringBuilder::as_string() const {
