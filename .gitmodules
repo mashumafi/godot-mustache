@@ -2,3 +2,6 @@
 	path = godot-cpp
 	url = https://github.com/godotengine/godot-cpp.git
 	branch = 4.3
+[submodule "project/mustache-spec"]
+	path = project/mustache-spec
+	url = git@github.com:mustache/spec.git

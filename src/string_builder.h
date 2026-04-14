@@ -33,26 +33,26 @@
 #include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include <string_view>
+
 class StringBuilder {
-	uint32_t string_length = 0;
-
-	godot::LocalVector<godot::String> strings;
-	godot::LocalVector<const char *> c_strings;
-
-	// -1 means it's a Godot String
-	// a natural number means C string.
-	godot::LocalVector<int32_t> appended_strings;
-
 public:
+	StringBuilder() {}
+
+	void reserve(uint32_t size);
+
 	StringBuilder &append(const godot::String &p_string);
-	StringBuilder &append(const char *p_cstring);
+	StringBuilder &append(std::u32string_view p_string);
+
+	StringBuilder &append_with_prefix(const godot::String &prefix, const godot::String &p_string, bool is_last);
+	StringBuilder &append_with_prefix(const godot::String &prefix, std::u32string_view p_string, bool is_last);
 
 	_FORCE_INLINE_ StringBuilder &operator+(const godot::String &p_string) {
 		return append(p_string);
 	}
 
-	_FORCE_INLINE_ StringBuilder &operator+(const char *p_cstring) {
-		return append(p_cstring);
+	_FORCE_INLINE_ StringBuilder &operator+(std::u32string_view p_string) {
+		return append(p_string);
 	}
 
 	_FORCE_INLINE_ void operator+=(const godot::String &p_string) {
@@ -64,7 +64,7 @@ public:
 	}
 
 	_FORCE_INLINE_ int num_strings_appended() const {
-		return appended_strings.size();
+		return views.size();
 	}
 
 	_FORCE_INLINE_ uint32_t get_string_length() const {
@@ -77,5 +77,9 @@ public:
 		return as_string();
 	}
 
-	StringBuilder() {}
+private:
+	int64_t string_length = 0;
+
+	godot::LocalVector<godot::String> strings;
+	godot::LocalVector<std::u32string_view> views;
 };

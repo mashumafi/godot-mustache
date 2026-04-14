@@ -30,26 +30,58 @@
 
 #include "string_builder.h"
 
+void StringBuilder::reserve(uint32_t size) {
+	strings.reserve(size);
+	views.reserve(size);
+}
+
 StringBuilder &StringBuilder::append(const godot::String &p_string) {
-	if (p_string.is_empty()) {
+	strings.push_back(p_string);
+	return append({ p_string.ptr(), static_cast<size_t>(p_string.length()) });
+}
+
+StringBuilder &StringBuilder::append(std::u32string_view p_string) {
+	if (p_string.empty()) {
 		return *this;
 	}
 
-	strings.push_back(p_string);
-	appended_strings.push_back(-1);
+	views.push_back(p_string);
 
-	string_length += p_string.length();
+	string_length += p_string.size();
 
 	return *this;
 }
 
-StringBuilder &StringBuilder::append(const char *p_cstring) {
-	int32_t len = strlen(p_cstring);
+StringBuilder &StringBuilder::append_with_prefix(const godot::String &prefix, const godot::String &p_string, bool is_last) {
+	// Hold the string to keep the buffer alive
+	strings.push_back(p_string);
 
-	c_strings.push_back(p_cstring);
-	appended_strings.push_back(len);
+	return append_with_prefix(prefix, { p_string.ptr(), static_cast<size_t>(p_string.length()) }, is_last);
+}
 
-	string_length += len;
+StringBuilder &StringBuilder::append_with_prefix(const godot::String &prefix, std::u32string_view p_string, bool is_last) {
+	if (prefix.is_empty()) {
+		return append(p_string);
+	}
+
+	for (size_t i = 0; i < p_string.size(); ++i) {
+		if (p_string[i] == U'\n') {
+			if (i + 1 == p_string.size() && is_last) {
+				// Don't add a prefix if the string ends with a newline
+				append(p_string);
+				return *this;
+			}
+			append(p_string.substr(0, i + 1));
+			append(prefix);
+			p_string.remove_prefix(i + 1);
+			i = 0;
+		}
+	}
+
+	// Append any remaining text
+	if (!p_string.empty()) {
+		append(p_string);
+	}
 
 	return *this;
 }
@@ -59,40 +91,22 @@ godot::String StringBuilder::as_string() const {
 		return "";
 	}
 
-	godot::Char32String string;
+	godot::String string;
 	string.resize(string_length + 1);
 	char32_t *buffer = string.ptrw();
 
-	int current_position = 0;
+	size_t current_position = 0;
 
-	int godot_string_elem = 0;
-	int c_string_elem = 0;
+	for (std::u32string_view s : views) {
+		size_t str_len = s.size();
 
-	for (uint32_t i = 0; i < appended_strings.size(); i++) {
-		const int32_t str_len = appended_strings[i];
-
-		if (str_len == -1) {
-			// Godot string
-			const godot::String &s = strings[godot_string_elem];
-
-			memcpy(buffer + current_position, s.ptr(), s.length() * sizeof(char32_t));
-
-			current_position += s.length();
-
-			godot_string_elem++;
-		} else {
-			const char *s = c_strings[c_string_elem];
-
-			for (int32_t j = 0; j < str_len; j++) {
-				buffer[current_position + j] = s[j];
-			}
-
-			current_position += str_len;
-
-			c_string_elem++;
+		for (size_t j = 0; j < str_len; j++) {
+			buffer[current_position + j] = s[j];
 		}
+
+		current_position += str_len;
 	}
 	buffer[current_position] = 0;
 
-	return godot::String(string);
+	return string;
 }
