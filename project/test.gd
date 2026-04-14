@@ -11,6 +11,10 @@ func _make_run_button() -> Button:
 	var run_button := Button.new()
 	run_button.text = "Run"
 	run_button.pressed.connect(func():
-		TestRunner.emit_test_results(self._run())
+		var start := Time.get_ticks_usec()
+		var results = self._run()
+		var end := Time.get_ticks_usec()
+		prints("Testing", results.size(),  "tests took", (end - start) / 1000.0, "ms.")
+		TestRunner.emit_test_results(results)
 	)
 	return run_button

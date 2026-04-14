@@ -11,6 +11,9 @@
 
 class MustacheTemplateProvider;
 
+using MustacheSize = uint64_t;
+using Segment = godot::Pair<MustacheSize, MustacheSize>;
+
 struct TokenData {
 	inline TokenData(std::u32string_view beginDelimiter, std::u32string_view content, std::u32string_view endDelimiter) : m_beginDelimiter(beginDelimiter), m_content(content), m_endDelimiter(endDelimiter) {
 	}
@@ -46,12 +49,12 @@ public:
 	}
 	inline MustacheElement(Type type, const TokenData &data, uint64_t line) : m_type(type), m_tokenData{ data }, m_line(line) {
 	}
-	inline MustacheElement(Type type, size_t segmentIndex, const TokenData &data, uint64_t line) : m_type(type), m_variable{ segmentIndex, data }, m_line(line) {
+	inline MustacheElement(Type type, MustacheSize segmentIndex, const TokenData &data, uint64_t line) : m_type(type), m_variable{ segmentIndex, data }, m_line(line) {
 	}
-	inline MustacheElement(Type type, size_t segmentIndex, size_t jumpIndex, const TokenData &data, uint64_t line) : m_type(type), m_section{ segmentIndex, std::u32string_view(), jumpIndex, data }, m_line(line) {
+	inline MustacheElement(Type type, MustacheSize segmentIndex, MustacheSize jumpIndex, const TokenData &data, uint64_t line) : m_type(type), m_section{ segmentIndex, std::u32string_view(), jumpIndex, data }, m_line(line) {
 	}
 
-	inline MustacheElement(size_t partialIndex, std::u32string_view prefix, const TokenData &data, uint64_t line) : m_type(Type::Partial), m_partial{ partialIndex, prefix, data }, m_line(line) {
+	inline MustacheElement(MustacheSize partialIndex, std::u32string_view prefix, const TokenData &data, uint64_t line) : m_type(Type::Partial), m_partial{ partialIndex, prefix, data }, m_line(line) {
 	}
 
 	uint64_t m_line;
@@ -65,32 +68,28 @@ public:
 
 		struct
 		{
-			size_t m_segmentIndex;
+			MustacheSize m_segmentIndex;
 			TokenData m_data;
 		} m_variable;
 
 		struct
 		{
-			size_t m_partialIndex;
+			MustacheSize m_partialIndex;
 			std::u32string_view m_prefix; // white space before partial which the partial will be prefixed with
 			TokenData m_data;
 		} m_partial;
 
 		struct
 		{
-			size_t m_segmentIndex;
+			MustacheSize m_segmentIndex;
 			std::u32string_view m_content;
-			size_t m_jumpIndex;
+			MustacheSize m_jumpIndex;
 			TokenData m_data;
 		} m_section;
 
 		TokenData m_tokenData;
 	};
 };
-
-using Segment = godot::Pair<size_t, size_t>;
-
-using MustacheSize = uint64_t;
 
 class MustacheTemplate : public godot::RefCounted {
 	GDCLASS(MustacheTemplate, godot::RefCounted)
@@ -116,6 +115,6 @@ protected:
 
 private:
 	godot::Ref<MustacheTemplateProvider> m_partialProvider;
-	godot::Char32String m_buffer;
+	godot::String m_buffer;
 	Data m_data;
 };

@@ -66,7 +66,7 @@ godot::String StringBuilder::as_string() const {
 		return "";
 	}
 
-	godot::Char32String string;
+	godot::String string;
 	string.resize(string_length + 1);
 	char32_t *buffer = string.ptrw();
 
@@ -83,5 +83,5 @@ godot::String StringBuilder::as_string() const {
 	}
 	buffer[current_position] = 0;
 
-	return godot::String(string);
+	return string;
 }
